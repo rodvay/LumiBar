@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/rodvay/LumiBar/releases/latest"><img src="https://img.shields.io/github/v/release/rodvay/LumiBar?style=flat-square&color=fbbf24" alt="Release"></a>
-  <img src="https://img.shields.io/badge/size-~83%20KB-38bdf8?style=flat-square" alt="Size">
+  <img src="https://img.shields.io/badge/size-~86%20KB-38bdf8?style=flat-square" alt="Size">
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f172a?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/dependencies-Zero-34d399?style=flat-square" alt="Zero Dependencies">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square" alt="MIT License"></a>
@@ -16,7 +16,7 @@
 
 ---
 
-**LumiBar** is an ultra-lightweight (**~83 KB**), single-file native Windows 10/11 desktop monitor controller & power guard. It replaces heavy ~150 MB Electron brightness trays (like Twinkle Tray), Caffeine utilities, and shutdown timers with a single zero-bloat native executable.
+**LumiBar** is an ultra-lightweight (**~86 KB**), single-file native Windows 10/11 desktop monitor controller & power guard. It replaces heavy ~150 MB Electron brightness trays (like Twinkle Tray), Caffeine utilities, and shutdown timers with a single zero-bloat native executable.
 
 ## Screenshots
 
@@ -49,7 +49,7 @@
 
 ## Türkçe Özet
 
-**LumiBar**, Windows 10/11 için yalnızca **~83 KB** boyutunda, kurulumsuz, tek dosya yerel **Çoklu Monitör DDC/CI Parlaklık, Sıcak Gece Tonu ve Akıllı Güç Koruma** aracıdır:
+**LumiBar**, Windows 10/11 için yalnızca **~86 KB** boyutunda, kurulumsuz, tek dosya yerel **Çoklu Monitör DDC/CI Parlaklık, Sıcak Gece Tonu ve Akıllı Güç Koruma** aracıdır:
 - 150 MB'lık Electron parlaklık araçları yerine doğrudan Windows `dxva2.dll` (DDC/CI) + Laptop WMI üzerinden donanımsal parlaklık ve kontrast kontrolü sunar; monitör marka/modelini EDID'den otomatik okur.
 - Göz yorgunluğunu azaltan **Sıcak Gece Tonu (`6500K → 2700K`)** uygulamadan çıkıldığında orijinal gamma profilini otomatik geri yükler.
 - **Uyanık Tut (Keep-Awake)**, **Geri Sayım Zamanlayıcısı** ve indirme/render bitince (`İndirme < 1 Mbps & CPU < %8`) 60 saniyelik iptal edilebilir uyarıyla otomatik uyutan/kapatan **Akıllı Boşta Güç** modülünü içerir.

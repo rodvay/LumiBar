@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net.NetworkInformation;
 
 namespace LumiBar
@@ -160,6 +161,12 @@ namespace LumiBar
                     _st.SmartIdleEnabled = false;
                     _st.SmartIdleElapsedSec = 0;
                     _warningFromIdle = false;
+                    if (act == PowerTimerAction.Sleep || act == PowerTimerAction.Shutdown)
+                    {
+                        _st.Awake = AwakeMode.Off;
+                        _st.AwakeRemainingSec = -1;
+                        ApplyExecutionState();
+                    }
                     executeNow = true;
                     return act;
                 }
@@ -239,7 +246,8 @@ namespace LumiBar
             {
                 try
                 {
-                    ProcessStartInfo psi = new ProcessStartInfo("shutdown.exe", "/s /t 0");
+                    string shutdownExe = Path.Combine(Environment.SystemDirectory, "shutdown.exe");
+                    ProcessStartInfo psi = new ProcessStartInfo(shutdownExe, "/s /t 0");
                     psi.CreateNoWindow = true;
                     psi.UseShellExecute = false;
                     Process.Start(psi);

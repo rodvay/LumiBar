@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/rodvay/LumiBar/releases/latest"><img src="https://img.shields.io/github/v/release/rodvay/LumiBar?style=flat-square&color=fbbf24" alt="最新版本"></a>
-  <img src="https://img.shields.io/badge/体积-~83%20KB-38bdf8?style=flat-square" alt="体积">
+  <img src="https://img.shields.io/badge/体积-~86%20KB-38bdf8?style=flat-square" alt="体积">
   <img src="https://img.shields.io/badge/系统-Windows%2010%20%2F%2011-0f172a?style=flat-square" alt="平台">
   <img src="https://img.shields.io/badge/依赖-零依赖单文件-34d399?style=flat-square" alt="零依赖">
   <a href="LICENSE"><img src="https://img.shields.io/badge/协议-MIT-a78bfa?style=flat-square" alt="MIT 协议"></a>
@@ -16,7 +16,7 @@
 
 ---
 
-**LumiBar** 是一款仅 **~83 KB** 的原生单文件 Windows 10/11 多显示器硬件调光与电源守护工具。用一个极简原生 EXE 同时替代上百 MB 的 Electron 亮度托盘（如 Twinkle Tray）、防休眠工具（Caffeine）与定时关机工具！
+**LumiBar** 是一款仅 **~86 KB** 的原生单文件 Windows 10/11 多显示器硬件调光与电源守护工具。用一个极简原生 EXE 同时替代上百 MB 的 Electron 亮度托盘（如 Twinkle Tray）、防休眠工具（Caffeine）与定时关机工具！
 
 ## 界面预览
 

@@ -96,7 +96,7 @@ namespace LumiBar
 
     internal sealed class MainForm : Form
     {
-        private const string AppVersion = "1.0.2";
+        private const string AppVersion = "1.0.3";
 
         private readonly LaunchConfig _launch;
         private readonly LumiBarSettings _cfg;
