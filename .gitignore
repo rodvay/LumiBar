@@ -1,0 +1,8 @@
+*.exe
+*.ico
+*.pdb
+*.log
+*.tmp
+.vs/
+bin/
+obj/
