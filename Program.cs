@@ -96,7 +96,7 @@ namespace LumiBar
 
     internal sealed class MainForm : Form
     {
-        private const string AppVersion = "1.0.1";
+        private const string AppVersion = "1.0.2";
 
         private readonly LaunchConfig _launch;
         private readonly LumiBarSettings _cfg;
@@ -1256,8 +1256,13 @@ namespace LumiBar
             }
             else if (sl.Kind == "tint")
             {
-                _display.SetWarmTint(val);
+                bool ok = _display.SetWarmTint(val);
                 _cfg.WarmTint = val;
+                if (!ok && val > 0)
+                    ShowToast(Loc.T(_lang,
+                        "Warm Night Tint unavailable (Windows HDR or driver locks gamma).",
+                        "Sıcak Gece Tonu kullanılamıyor (Windows HDR veya sürücü gammayı kilitliyor).",
+                        "暖色温不可用（Windows HDR 或显卡驱动锁定了 Gamma 曲线）。"));
             }
             Invalidate();
         }
@@ -1365,10 +1370,15 @@ namespace LumiBar
                 int tv;
                 if (int.TryParse(id.Substring(5), out tv))
                 {
-                    _display.SetWarmTint(tv);
+                    bool ok = _display.SetWarmTint(tv);
                     _cfg.WarmTint = tv;
                     if (!_launch.DemoMode) _cfg.Save();
-                    Invalidate();
+                    if (!ok && tv > 0)
+                        ShowToast(Loc.T(_lang,
+                            "Warm Night Tint unavailable (Windows HDR or driver locks gamma).",
+                            "Sıcak Gece Tonu kullanılamıyor (Windows HDR veya sürücü gammayı kilitliyor).",
+                            "暖色温不可用（Windows HDR 或显卡驱动锁定了 Gamma 曲线）。"));
+                    else Invalidate();
                 }
             }
             else if (id.StartsWith("awake_"))

@@ -86,7 +86,8 @@ namespace LumiBar
                         return true;
                     }, IntPtr.Zero);
 
-                int wmiBrightness = ReadWmiLaptopBrightness();
+                string wmiPnpId;
+                int wmiBrightness = ReadWmiLaptopBrightness(out wmiPnpId);
                 Dictionary<string, string> wmiNames = ReadWmiMonitorNames();
                 bool wmiAssigned = false;
 
@@ -106,7 +107,8 @@ namespace LumiBar
                     item.DeviceName = devName;
                     item.Resolution = w + "×" + h;
                     item.IsPrimary = (mi.dwFlags & WinNative.MONITORINFOF_PRIMARY) != 0;
-                    item.FriendlyName = ResolveFriendlyName(devName, item.Index + 1, wmiNames);
+                    string monPnp;
+                    item.FriendlyName = ResolveFriendlyName(devName, item.Index + 1, wmiNames, out monPnp);
                     item.Brightness = 100;
                     item.Contrast = 50;
 
@@ -123,7 +125,9 @@ namespace LumiBar
                     }
 
                     bool ddcOk = TryInitDdcCi(hMon, item);
-                    if (!ddcOk && wmiBrightness >= 0 && !wmiAssigned)
+                    bool pnpMatchesWmi = !string.IsNullOrEmpty(wmiPnpId) && !string.IsNullOrEmpty(monPnp) &&
+                        string.Equals(wmiPnpId, monPnp, StringComparison.OrdinalIgnoreCase);
+                    if (!ddcOk && wmiBrightness >= 0 && !wmiAssigned && (pnpMatchesWmi || string.IsNullOrEmpty(wmiPnpId)))
                     {
                         item.Channel = DisplayChannel.LaptopWmi;
                         item.Brightness = Math.Max(0, Math.Min(100, wmiBrightness));
@@ -138,6 +142,20 @@ namespace LumiBar
                     }
 
                     _monitors.Add(item);
+                }
+
+                // If laptop WMI wasn't matched by exact PNP ID yet, assign to first non-DDC/CI monitor as fallback
+                if (wmiBrightness >= 0 && !wmiAssigned)
+                {
+                    for (int i = 0; i < _monitors.Count; i++)
+                    {
+                        if (_monitors[i].Channel == DisplayChannel.SoftwareGamma)
+                        {
+                            _monitors[i].Channel = DisplayChannel.LaptopWmi;
+                            _monitors[i].Brightness = Math.Max(0, Math.Min(100, wmiBrightness));
+                            break;
+                        }
+                    }
                 }
 
                 _monitors.Sort(delegate(DisplayMonitorItem a, DisplayMonitorItem b)
@@ -274,8 +292,9 @@ namespace LumiBar
             return "";
         }
 
-        private static string ResolveFriendlyName(string deviceName, int ordinal, Dictionary<string, string> wmiNames)
+        private static string ResolveFriendlyName(string deviceName, int ordinal, Dictionary<string, string> wmiNames, out string pnpOut)
         {
+            pnpOut = "";
             try
             {
                 WinNative.DISPLAY_DEVICEW dd = new WinNative.DISPLAY_DEVICEW();
@@ -286,6 +305,7 @@ namespace LumiBar
                     string devId = (dd.DeviceID ?? "").Trim();
                     string[] parts = devId.Split('\\');
                     string pnp = parts.Length >= 2 ? parts[1].Trim() : "";
+                    pnpOut = pnp;
                     string edidName;
                     if (!string.IsNullOrEmpty(pnp) && wmiNames != null && wmiNames.TryGetValue(pnp, out edidName) && !string.IsNullOrEmpty(edidName))
                         return edidName;
@@ -299,17 +319,24 @@ namespace LumiBar
             return "Display " + ordinal;
         }
 
-        private static int ReadWmiLaptopBrightness()
+        private static int ReadWmiLaptopBrightness(out string pnpId)
         {
+            pnpId = "";
             try
             {
-                using (ManagementObjectSearcher s = new ManagementObjectSearcher(@"root\wmi", "SELECT CurrentBrightness FROM WmiMonitorBrightness"))
+                using (ManagementObjectSearcher s = new ManagementObjectSearcher(@"root\wmi", "SELECT InstanceName, CurrentBrightness FROM WmiMonitorBrightness"))
                 using (ManagementObjectCollection col = s.Get())
                 {
                     foreach (ManagementObject obj in col)
                     {
                         using (obj)
                         {
+                            string inst = obj["InstanceName"] as string;
+                            if (!string.IsNullOrEmpty(inst))
+                            {
+                                string[] parts = inst.Split('\\');
+                                if (parts.Length >= 2) pnpId = parts[1].Trim();
+                            }
                             object v = obj["CurrentBrightness"];
                             if (v != null) return Convert.ToInt32(v);
                         }
@@ -380,11 +407,14 @@ namespace LumiBar
             _signal.Set();
         }
 
-        public void SetWarmTint(int pct)
+        public bool SetWarmTint(int pct)
         {
             _warmTintPct = Math.Max(0, Math.Min(80, pct));
-            if (_demoMode) return;
-            for (int i = 0; i < _monitors.Count; i++) ApplyGammaToMonitor(_monitors[i]);
+            if (_demoMode || _monitors.Count == 0) return true;
+            bool anyOk = false;
+            for (int i = 0; i < _monitors.Count; i++)
+                if (ApplyGammaToMonitor(_monitors[i])) anyOk = true;
+            return _warmTintPct == 0 || anyOk;
         }
 
         public void ResetAllGammas()
@@ -404,17 +434,18 @@ namespace LumiBar
             _gammaTouched = false;
         }
 
-        private void ApplyGammaToMonitor(DisplayMonitorItem m)
+        private bool ApplyGammaToMonitor(DisplayMonitorItem m)
         {
-            if (m == null || string.IsNullOrEmpty(m.DeviceName)) return;
+            if (m == null || string.IsNullOrEmpty(m.DeviceName)) return false;
             int softBr = (m.Channel == DisplayChannel.SoftwareGamma) ? m.Brightness : 100;
             if (softBr >= 100 && _warmTintPct <= 0)
             {
                 if (_gammaTouched && m.HasOriginalGamma) WriteGammaRamp(m.DeviceName, m.OriginalGamma);
-                return;
+                return true;
             }
             WinNative.RAMP ramp = BuildGammaRamp(m.OriginalGamma, softBr, _warmTintPct);
-            if (WriteGammaRamp(m.DeviceName, ramp)) _gammaTouched = true;
+            if (WriteGammaRamp(m.DeviceName, ramp)) { _gammaTouched = true; return true; }
+            return false;
         }
 
         // Pure testable gamma math: exact identity at (100, 0), smooth warm color shift & safe dimming otherwise
