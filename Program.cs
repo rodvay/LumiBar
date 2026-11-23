@@ -96,7 +96,7 @@ namespace LumiBar
 
     internal sealed class MainForm : Form
     {
-        private const string AppVersion = "1.0.0";
+        private const string AppVersion = "1.0.1";
 
         private readonly LaunchConfig _launch;
         private readonly LumiBarSettings _cfg;
@@ -181,14 +181,14 @@ namespace LumiBar
             _scale = ComputeScale();
             RebuildFonts();
             ClientSize = new Size(S(840), S(606));
-            MinimumSize = new Size(S(780), S(555));
+            MinimumSize = new Size(S(800), S(590));
 
             InitTray();
 
             _tickTimer = new System.Windows.Forms.Timer();
             _tickTimer.Interval = 1000;
             _tickTimer.Tick += OnPowerTick;
-            if (!_launch.DemoMode) _tickTimer.Start();
+            _tickTimer.Start();
         }
 
         private int S(float v) { return (int)Math.Round(v * _scale); }
@@ -286,6 +286,7 @@ namespace LumiBar
                 : Loc.T(_lang, "Keep-Awake: OFF (Click to Enable)", "Uyanık Tut: KAPALI (Aç)", "防休眠：已关闭（点击开启）"),
                 null, delegate
                 {
+                    _awakeDurMin = 0;
                     _power.SetAwake(awakeOn ? AwakeMode.Off : AwakeMode.ScreenAndPc, 0);
                     _cfg.AwakeMode = (int)_power.Status.Awake;
                     if (!_launch.DemoMode) _cfg.Save();
@@ -299,13 +300,25 @@ namespace LumiBar
 
         private void OnPowerTick(object sender, EventArgs e)
         {
+            bool toastExpired = false;
+            if (!string.IsNullOrEmpty(_toastText) && DateTime.UtcNow >= _toastUntil)
+            {
+                _toastText = "";
+                toastExpired = true;
+            }
+
+            if (_launch.DemoMode)
+            {
+                if (toastExpired) Invalidate();
+                return;
+            }
+
             bool wasWarn = _power.Status.WarningBannerActive;
             bool execNow;
             PowerTimerAction? act = _power.TickOneSecond(out execNow);
 
             if (!wasWarn && _power.Status.WarningBannerActive)
             {
-                // Surface window automatically during final 60s safety warning
                 RestoreFromTray();
             }
 
@@ -314,8 +327,31 @@ namespace LumiBar
                 PowerGuardEngine.ExecutePowerAction(act.Value);
             }
 
-            if (_tab == 1 || _power.Status.WarningBannerActive || _power.Status.CountdownActive || _power.Status.Awake != AwakeMode.Off)
+            if (toastExpired || _tab == 1 || _power.Status.WarningBannerActive || _power.Status.CountdownActive || _power.Status.Awake != AwakeMode.Off)
                 Invalidate();
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Escape && _power.Status.WarningBannerActive)
+            {
+                _power.CancelWarningBanner();
+                ShowToast(Loc.T(_lang, "Scheduled power action cancelled.", "Zamanlanmış güç işlemi iptal edildi.", "已取消定时电源操作。"));
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.F5)
+            {
+                _display.RefreshMonitors();
+                if (_cfg.WarmTint > 0) _display.SetWarmTint(_cfg.WarmTint);
+                ShowToast(Loc.T(_lang,
+                    Loc.F("Refreshed: {0} display(s).", _display.Monitors.Count),
+                    Loc.F("Yenilendi: {0} monitör bulundu.", _display.Monitors.Count),
+                    Loc.F("已刷新：检测到 {0} 台显示器。", _display.Monitors.Count)));
+                e.Handled = true;
+            }
+            else if (e.Control && e.KeyCode == Keys.D1) { _tab = 0; Invalidate(); e.Handled = true; }
+            else if (e.Control && e.KeyCode == Keys.D2) { _tab = 1; Invalidate(); e.Handled = true; }
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -323,7 +359,7 @@ namespace LumiBar
             base.OnHandleCreated(e);
             _scale = ComputeScale();
             RebuildFonts();
-            MinimumSize = new Size(S(780), S(555));
+            MinimumSize = new Size(S(800), S(590));
             WinNative.ApplyDarkTitleBar(Handle, UiTheme.Bg, UiTheme.Text);
             WinNative.AllowWakeMessage(Handle);
         }
@@ -347,7 +383,7 @@ namespace LumiBar
                 {
                     _scale = newDpi / 96f;
                     RebuildFonts();
-                    MinimumSize = new Size(S(780), S(555));
+                    MinimumSize = new Size(S(800), S(590));
                     Invalidate();
                 }
             }
@@ -495,13 +531,7 @@ namespace LumiBar
                 using (SolidBrush bv = new SolidBrush(UiTheme.Amber))
                     g.DrawString(verTxt, _fVer, bv, verRc, sfCenter);
 
-                string subTxt = Loc.T(_lang, "DDC/CI Brightness · Night Tint · Power Guard",
-                    "DDC/CI Parlaklık · Gece Tonu · Güç Koruma",
-                    "DDC/CI 硬件亮度 · 护眼色温 · 防休眠定时");
-                using (SolidBrush bs = new SolidBrush(UiTheme.Muted))
-                    g.DrawString(subTxt, _fSub, bs, new RectangleF(titleX, S(31), S(260), S(18)), sfNear);
-
-                // Right-to-left: Language pill + 2 Tab buttons
+                // Right-to-left: Language pill + 2 Tab buttons FIRST so subtitle never overlaps
                 int rx = right;
                 int btnH = S(28);
                 int btnY = (hdrH - btnH) / 2;
@@ -524,6 +554,13 @@ namespace LumiBar
                 Rectangle tab0Rc = new Rectangle(tab1Rc.Left - S(6) - wT0, btnY, wT0, btnH);
                 DrawPill(g, "tab_0", tab0Rc, tTab0, UiTheme.Amber, _tab == 0, sfCenter);
                 DrawPill(g, "tab_1", tab1Rc, tTab1, UiTheme.Cyan, _tab == 1, sfCenter);
+
+                string subTxt = Loc.T(_lang, "DDC/CI Brightness · Night Tint · Power Guard",
+                    "DDC/CI Parlaklık · Gece Tonu · Güç Koruma",
+                    "DDC/CI 硬件亮度 · 护眼色温 · 防休眠定时");
+                int subMaxW = Math.Max(S(80), tab0Rc.Left - titleX - S(10));
+                using (SolidBrush bs = new SolidBrush(UiTheme.Muted))
+                    g.DrawString(subTxt, _fSub, bs, new RectangleF(titleX, S(31), subMaxW, S(18)), sfNear);
 
                 int contentTop = hdrH + S(12);
                 int footerH = S(44);
@@ -623,19 +660,28 @@ namespace LumiBar
             GraphicsState st = g.Save();
             g.SetClip(listArea);
 
-            int cy = listTop - _scrollMonitors;
-            int cardW = _maxScrollMonitors > 0 ? w - S(10) : w;
-            for (int i = 0; i < _display.Monitors.Count; i++)
+            if (_display.Monitors.Count == 0)
             {
-                DisplayMonitorItem m = _display.Monitors[i];
-                int cardH = m.SupportsContrast ? S(130) : S(92);
-                Rectangle card = new Rectangle(x, cy, cardW, cardH);
-
-                if (card.Bottom >= listTop && card.Top <= listTop + listH)
+                using (SolidBrush be = new SolidBrush(UiTheme.Muted))
+                    g.DrawString(Loc.T(_lang, "No active displays detected. Click Refresh.", "Aktif monitör algılanmadı. Yenile'ye tıklayın.", "未检测到活动显示器，请点击刷新。"),
+                        _fBody, be, listArea, sfCenter);
+            }
+            else
+            {
+                int cy = listTop - _scrollMonitors;
+                int cardW = _maxScrollMonitors > 0 ? w - S(10) : w;
+                for (int i = 0; i < _display.Monitors.Count; i++)
                 {
-                    PaintMonitorCard(g, card, m, sfNear, sfCenter, sfFar);
+                    DisplayMonitorItem m = _display.Monitors[i];
+                    int cardH = m.SupportsContrast ? S(130) : S(92);
+                    Rectangle card = new Rectangle(x, cy, cardW, cardH);
+
+                    if (card.Bottom >= listTop && card.Top <= listTop + listH)
+                    {
+                        PaintMonitorCard(g, card, listArea, m, sfNear, sfCenter, sfFar);
+                    }
+                    cy += cardH + S(10);
                 }
-                cy += cardH + S(10);
             }
             g.Restore(st);
 
@@ -653,7 +699,7 @@ namespace LumiBar
             PaintWarmTintCard(g, tintRc, sfNear, sfCenter, sfFar);
         }
 
-        private void PaintMonitorCard(Graphics g, Rectangle rc, DisplayMonitorItem m, StringFormat sfNear, StringFormat sfCenter, StringFormat sfFar)
+        private void PaintMonitorCard(Graphics g, Rectangle rc, Rectangle clipArea, DisplayMonitorItem m, StringFormat sfNear, StringFormat sfCenter, StringFormat sfFar)
         {
             UiTheme.FillRounded(g, rc, S(10), UiTheme.Surface);
             UiTheme.DrawRounded(g, rc, S(10), UiTheme.Border, 1f);
@@ -722,7 +768,7 @@ namespace LumiBar
                 ix, row1Y, rc.Width - S(30),
                 Loc.T(_lang, "Brightness", "Parlaklık", "亮度"),
                 m.Brightness, minBr, 100, m.Brightness + "%",
-                UiTheme.Amber, UiTheme.Orange, sfNear, sfFar);
+                UiTheme.Amber, UiTheme.Orange, clipArea, sfNear, sfFar);
 
             // Contrast slider row (when supported by DDC/CI)
             if (m.SupportsContrast)
@@ -732,7 +778,7 @@ namespace LumiBar
                     ix, row2Y, rc.Width - S(30),
                     Loc.T(_lang, "Contrast", "Kontrast", "对比度"),
                     m.Contrast, 0, 100, m.Contrast + "%",
-                    UiTheme.Cyan, UiTheme.Violet, sfNear, sfFar);
+                    UiTheme.Cyan, UiTheme.Violet, clipArea, sfNear, sfFar);
             }
         }
 
@@ -749,10 +795,7 @@ namespace LumiBar
             int kelvin = DisplayEngine.WarmTintToKelvin(_display.WarmTintPct);
             string kBadge = kelvin + "K";
 
-            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
-                g.DrawString(title, _fCardTitle, bt, new RectangleF(ix, topY, S(240), S(24)), sfNear);
-
-            // Right quick pills: Off / Warm / Night / Reset
+            // Right quick pills: Off / Warm / Night / Reset (measure with _fPill to match DrawPill!)
             int rx = rc.Right - S(14);
             string[,] tPills = new string[,]
             {
@@ -765,7 +808,7 @@ namespace LumiBar
             {
                 string pid = tPills[i, 0];
                 string plbl = tPills[i, 1];
-                int pw = MeasurePillW(g, plbl, _fSmall, 8);
+                int pw = MeasurePillW(g, plbl, _fPill, 8);
                 Rectangle pr = new Rectangle(rx - pw, topY + S(1), pw, S(22));
                 bool act = (pid == "0" && _display.WarmTintPct == 0) ||
                            (pid == "35" && _display.WarmTintPct == 35) ||
@@ -781,11 +824,16 @@ namespace LumiBar
             using (SolidBrush bk = new SolidBrush(UiTheme.Amber))
                 g.DrawString(kBadge, _fSmall, bk, kRc, sfCenter);
 
+            // Title clamped cleanly against Kelvin pill
+            int tintTitleW = Math.Max(S(100), (int)kRc.Left - ix - S(10));
+            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
+                g.DrawString(title, _fCardTitle, bt, new RectangleF(ix, topY, tintTitleW, S(24)), sfNear);
+
             DrawLabeledSlider(g, "warm_tint", "tint", -1,
                 ix, rc.Y + S(48), rc.Width - S(30),
                 Loc.T(_lang, "Warmth", "Sıcaklık", "暖度"),
                 _display.WarmTintPct, 0, 80, _display.WarmTintPct + "%",
-                UiTheme.Amber, UiTheme.Orange, sfNear, sfFar);
+                UiTheme.Amber, UiTheme.Orange, rc, sfNear, sfFar);
 
             string hint = Loc.T(_lang,
                 "Reversible hardware gamma curve — original monitor color profile is restored automatically on exit.",
@@ -797,7 +845,7 @@ namespace LumiBar
 
         private void DrawLabeledSlider(Graphics g, string id, string kind, int monitorIndex,
             int x, int y, int w, string label, int value, int minVal, int maxVal, string readout,
-            Color colLeft, Color colRight, StringFormat sfNear, StringFormat sfFar)
+            Color colLeft, Color colRight, Rectangle clipArea, StringFormat sfNear, StringFormat sfFar)
         {
             int lblW = S(86);
             int valW = S(48);
@@ -812,12 +860,15 @@ namespace LumiBar
 
             Rectangle trackRc = new Rectangle(trackX, trackY, trackW, trackH);
             Rectangle hitRc = new Rectangle(trackX - S(8), y, trackW + S(16), rowH);
-
-            SliderSlot slot = new SliderSlot();
-            slot.Id = id; slot.Kind = kind; slot.MonitorIndex = monitorIndex;
-            slot.MinVal = minVal; slot.MaxVal = maxVal;
-            slot.TrackRect = trackRc; slot.HitRect = hitRc;
-            _sliders.Add(slot);
+            Rectangle clippedHit = Rectangle.Intersect(hitRc, clipArea);
+            if (clippedHit.Width >= S(20) && clippedHit.Height >= S(8))
+            {
+                SliderSlot slot = new SliderSlot();
+                slot.Id = id; slot.Kind = kind; slot.MonitorIndex = monitorIndex;
+                slot.MinVal = minVal; slot.MaxVal = maxVal;
+                slot.TrackRect = trackRc; slot.HitRect = clippedHit;
+                _sliders.Add(slot);
+            }
 
             // Track background
             UiTheme.FillRounded(g, trackRc, trackH / 2f, UiTheme.SurfaceAlt);
@@ -860,37 +911,42 @@ namespace LumiBar
         private void PaintPowerTab(Graphics g, int x, int y, int w, int h, StringFormat sfNear, StringFormat sfCenter, StringFormat sfFar)
         {
             PowerGuardStatus st = _power.Status;
-            int gap = S(12);
+            bool compact = (h < S(455));
+            int gap = compact ? S(8) : S(12);
+
+            // Adaptive vertical heights so Card 3 NEVER overflows Footer even with 60s Warning Banner at MinimumSize
+            int c1H = compact ? Math.Max(S(136), (int)Math.Round(h * 0.355)) : S(162);
+            int c2H = compact ? Math.Max(S(106), (int)Math.Round(h * 0.280)) : S(130);
+            int c3H = Math.Max(S(112), h - c1H - c2H - gap * 2);
 
             // ── CARD 1: KEEP-AWAKE ──
-            int c1H = S(162);
             Rectangle c1 = new Rectangle(x, y, w, c1H);
             UiTheme.FillRounded(g, c1, S(10), UiTheme.Surface);
             UiTheme.DrawRounded(g, c1, S(10), st.Awake != AwakeMode.Off ? UiTheme.Emerald : UiTheme.Border, 1f);
             UiTheme.FillRounded(g, new RectangleF(c1.X + S(1), c1.Y + S(12), S(3.5f), c1.Height - S(24)), S(2), UiTheme.Emerald);
 
             int ix = c1.X + S(16);
-            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
-                g.DrawString(Loc.T(_lang, "Keep-Awake Guard (No Sleep)", "Uyanık Tutma Koruması (Uyku Engelle)", "防休眠守护（替代 Caffeine）"),
-                    _fCardTitle, bt, new RectangleF(ix, c1.Y + S(10), S(420), S(24)), sfNear);
-
             string awakeStat = st.Awake == AwakeMode.Off
                 ? Loc.T(_lang, "Inactive", "Devre Dışı", "未开启")
                 : (st.AwakeRemainingSec > 0
                     ? Loc.T(_lang, "Active · ", "Aktif · ", "运行中 · ") + PowerGuardEngine.FormatDuration(st.AwakeRemainingSec)
                     : Loc.T(_lang, "Active · Unlimited", "Aktif · Süresiz", "运行中 · 持续"));
             int asW = MeasurePillW(g, awakeStat, _fSmall, 9);
-            RectangleF asRc = new RectangleF(c1.Right - asW - S(14), c1.Y + S(12), asW, S(22));
+            RectangleF asRc = new RectangleF(c1.Right - asW - S(14), c1.Y + (compact ? S(8) : S(12)), asW, S(22));
             Color asCol = st.Awake != AwakeMode.Off ? UiTheme.Emerald : UiTheme.Muted;
             UiTheme.FillRounded(g, asRc, S(6), Color.FromArgb(28, asCol));
             using (SolidBrush bas = new SolidBrush(asCol))
                 g.DrawString(awakeStat, _fSmall, bas, asRc, sfCenter);
 
+            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
+                g.DrawString(Loc.T(_lang, "Keep-Awake Guard (No Sleep)", "Uyanık Tutma Koruması (Uyku Engelle)", "防休眠守护（替代 Caffeine）"),
+                    _fCardTitle, bt, new RectangleF(ix, c1.Y + (compact ? S(7) : S(10)), Math.Max(S(120), (int)asRc.Left - ix - S(10)), S(24)), sfNear);
+
             // 3 Mode Cards
             int mGap = S(10);
             int mW = (w - S(32) - mGap * 2) / 3;
-            int mY = c1.Y + S(44);
-            int mH = S(66);
+            int mY = c1.Y + (compact ? S(36) : S(44));
+            int mH = compact ? Math.Max(S(52), c1H - S(76)) : S(66);
             DrawAwakeModeCard(g, "awake_0", new Rectangle(ix, mY, mW, mH),
                 Loc.T(_lang, "Off", "Kapalı", "关闭"),
                 Loc.T(_lang, "Allow normal Windows sleep", "Normal Windows uyku planı", "遵循系统默认睡眠计划"),
@@ -905,7 +961,7 @@ namespace LumiBar
                 st.Awake == AwakeMode.PcOnly, UiTheme.Cyan, sfNear);
 
             // Duration strip
-            int dY = c1.Y + S(122);
+            int dY = c1.Bottom - S(34);
             using (SolidBrush bdl = new SolidBrush(UiTheme.Muted))
                 g.DrawString(Loc.T(_lang, "Duration:", "Süre:", "持续时间:"), _fBody, bdl, new RectangleF(ix, dY, S(78), S(26)), sfNear);
             int dx = ix + S(80);
@@ -928,24 +984,23 @@ namespace LumiBar
 
             // ── CARD 2: POWER COUNTDOWN TIMER ──
             int c2Y = c1.Bottom + gap;
-            int c2H = S(132);
             Rectangle c2 = new Rectangle(x, c2Y, w, c2H);
             UiTheme.FillRounded(g, c2, S(10), UiTheme.Surface);
             UiTheme.DrawRounded(g, c2, S(10), st.CountdownActive ? UiTheme.Cyan : UiTheme.Border, 1f);
             UiTheme.FillRounded(g, new RectangleF(c2.X + S(1), c2.Y + S(12), S(3.5f), c2.Height - S(24)), S(2), UiTheme.Cyan);
 
-            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
-                g.DrawString(Loc.T(_lang, "Power Countdown Timer", "Geri Sayım Güç Zamanlayıcısı", "倒计时电源任务"),
-                    _fCardTitle, bt, new RectangleF(ix, c2.Y + S(10), S(360), S(24)), sfNear);
-
             string cdTxt = st.CountdownActive
                 ? PowerGuardEngine.FormatDuration(st.CountdownRemainingSec)
                 : Loc.T(_lang, "Ready", "Hazır", "就绪");
             using (SolidBrush bcd = new SolidBrush(st.CountdownActive ? UiTheme.Cyan : UiTheme.Subtle))
-                g.DrawString(cdTxt, st.CountdownActive ? _fBigNum : _fCardTitle, bcd, new RectangleF(c2.Right - S(150), c2.Y + S(10), S(136), S(26)), sfFar);
+                g.DrawString(cdTxt, st.CountdownActive ? _fBigNum : _fCardTitle, bcd, new RectangleF(c2.Right - S(150), c2.Y + (compact ? S(7) : S(10)), S(136), S(26)), sfFar);
+
+            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
+                g.DrawString(Loc.T(_lang, "Power Countdown Timer", "Geri Sayım Güç Zamanlayıcısı", "倒计时电源任务"),
+                    _fCardTitle, bt, new RectangleF(ix, c2.Y + (compact ? S(7) : S(10)), Math.Max(S(140), c2.Right - S(162) - ix), S(24)), sfNear);
 
             // Action selector pills + duration pills + Start/Cancel button
-            int tr1Y = c2.Y + S(46);
+            int tr1Y = c2.Y + (compact ? S(38) : S(46));
             int ax = ix;
             string[,] tActs = new string[,]
             {
@@ -955,14 +1010,14 @@ namespace LumiBar
             };
             for (int i = 0; i < tActs.GetLength(0); i++)
             {
-                int aw = MeasurePillW(g, tActs[i, 1], _fPill, 9);
+                int aw = MeasurePillW(g, tActs[i, 1], _fPill, 8);
                 Rectangle ar = new Rectangle(ax, tr1Y, aw, S(28));
                 bool act = ((int)_timerAction == i);
                 DrawPill(g, "tact_" + i, ar, tActs[i, 1], i == 1 ? UiTheme.Coral : UiTheme.Cyan, act, sfCenter);
-                ax = ar.Right + S(6);
+                ax = ar.Right + S(5);
             }
 
-            ax += S(10);
+            ax += S(6);
             int[] tMins = new int[] { 15, 30, 60, 120 };
             string[] tMinLbls = new string[]
             {
@@ -982,7 +1037,7 @@ namespace LumiBar
             string startTxt = st.CountdownActive
                 ? Loc.T(_lang, "Cancel Timer", "İptal Et", "取消定时")
                 : Loc.T(_lang, "Start Timer", "Başlat", "开始计时");
-            int sw = MeasurePillW(g, startTxt, _fPill, 12);
+            int sw = MeasurePillW(g, startTxt, _fPill, 11);
             Rectangle startRc = new Rectangle(c2.Right - sw - S(14), tr1Y, sw, S(28));
             DrawPill(g, "timer_toggle", startRc, startTxt, st.CountdownActive ? UiTheme.Coral : UiTheme.Cyan, true, sfCenter);
 
@@ -991,31 +1046,30 @@ namespace LumiBar
                 "Uyku veya Kapatma öncesinde 60 saniyelik iptal edilebilir uyarı çubuğu açılır.",
                 "执行睡眠或关机前会弹出 60 秒可随时取消的安全倒计时提醒。");
             using (SolidBrush bh = new SolidBrush(UiTheme.Subtle))
-                g.DrawString(c2Hint, _fSmall, bh, new RectangleF(ix, c2.Y + S(92), w - S(32), S(20)), sfNear);
+                g.DrawString(c2Hint, _fSmall, bh, new RectangleF(ix, c2.Bottom - S(28), w - S(32), S(20)), sfNear);
 
             // ── CARD 3: SMART IDLE AUTO-SLEEP / SHUTDOWN ──
             int c3Y = c2.Bottom + gap;
-            int c3H = Math.Max(S(142), y + h - c3Y);
             Rectangle c3 = new Rectangle(x, c3Y, w, c3H);
             UiTheme.FillRounded(g, c3, S(10), UiTheme.Surface);
             UiTheme.DrawRounded(g, c3, S(10), st.SmartIdleEnabled ? UiTheme.Violet : UiTheme.Border, 1f);
             UiTheme.FillRounded(g, new RectangleF(c3.X + S(1), c3.Y + S(12), S(3.5f), c3.Height - S(24)), S(2), UiTheme.Violet);
 
-            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
-                g.DrawString(Loc.T(_lang, "Smart Idle Auto-Power (After Downloads / Renders)",
-                    "Akıllı Boşta Otomatik Güç (İndirme / Render Sonrası)",
-                    "智能空闲自动关机/睡眠（下载或渲染完成后）"),
-                    _fCardTitle, bt, new RectangleF(ix, c3.Y + S(10), w - S(170), S(24)), sfNear);
-
             string idleBtn = st.SmartIdleEnabled
                 ? Loc.T(_lang, "Watcher: ON", "İzleyici: AÇIK", "监控中：开")
                 : Loc.T(_lang, "Watcher: OFF", "İzleyici: KAPALI", "监控：关");
             int ibw = MeasurePillW(g, idleBtn, _fPill, 11);
-            Rectangle ibRc = new Rectangle(c3.Right - ibw - S(14), c3.Y + S(10), ibw, S(26));
+            Rectangle ibRc = new Rectangle(c3.Right - ibw - S(14), c3.Y + (compact ? S(7) : S(10)), ibw, S(26));
             DrawPill(g, "idle_toggle", ibRc, idleBtn, st.SmartIdleEnabled ? UiTheme.Violet : UiTheme.Muted, st.SmartIdleEnabled, sfCenter);
 
+            using (SolidBrush bt = new SolidBrush(UiTheme.Text))
+                g.DrawString(Loc.T(_lang, "Smart Idle Auto-Power (After Downloads / Renders)",
+                    "Akıllı Boşta Otomatik Güç (İndirme / Render Sonrası)",
+                    "智能空闲自动关机/睡眠（下载或渲染完成后）"),
+                    _fCardTitle, bt, new RectangleF(ix, c3.Y + (compact ? S(7) : S(10)), Math.Max(S(140), ibRc.Left - ix - S(10)), S(24)), sfNear);
+
             // Controls row: Action + Hold minutes
-            int irY = c3.Y + S(46);
+            int irY = c3.Y + (compact ? S(38) : S(46));
             int ix2 = ix;
             string[] iActs = new string[] { Loc.T(_lang, "Sleep", "Uyku", "睡眠"), Loc.T(_lang, "Shutdown", "Kapat", "关机") };
             for (int i = 0; i < 2; i++)
@@ -1039,9 +1093,10 @@ namespace LumiBar
                 ix2 = mr.Right + S(6);
             }
 
-            // Live Telemetry Bar
-            int telY = c3.Y + S(88);
-            Rectangle telBox = new Rectangle(ix, telY, w - S(32), S(38));
+            // Live Telemetry Bar anchored safely inside c3
+            int telH = compact ? S(32) : S(38);
+            int telY = c3.Bottom - telH - S(10);
+            Rectangle telBox = new Rectangle(ix, telY, w - S(32), telH);
             UiTheme.FillRounded(g, telBox, S(7), UiTheme.SurfaceAlt);
             UiTheme.DrawRounded(g, telBox, S(7), UiTheme.Border, 1f);
 
@@ -1215,8 +1270,8 @@ namespace LumiBar
             {
                 int delta = e.Delta > 0 ? 5 : -5;
                 int cur = 0;
-                if (sl.Kind == "br" && sl.MonitorIndex < _display.Monitors.Count) cur = _display.Monitors[sl.MonitorIndex].Brightness;
-                else if (sl.Kind == "ct" && sl.MonitorIndex < _display.Monitors.Count) cur = _display.Monitors[sl.MonitorIndex].Contrast;
+                if (sl.Kind == "br" && sl.MonitorIndex >= 0 && sl.MonitorIndex < _display.Monitors.Count) cur = _display.Monitors[sl.MonitorIndex].Brightness;
+                else if (sl.Kind == "ct" && sl.MonitorIndex >= 0 && sl.MonitorIndex < _display.Monitors.Count) cur = _display.Monitors[sl.MonitorIndex].Contrast;
                 else if (sl.Kind == "tint") cur = _display.WarmTintPct;
                 ApplySliderValue(sl, cur + delta);
                 if (sl.Kind == "tint" && !_launch.DemoMode) _cfg.Save();

@@ -33,6 +33,7 @@ namespace LumiBar
     {
         private readonly List<DisplayMonitorItem> _monitors = new List<DisplayMonitorItem>();
         private readonly object _sync = new object();
+        private readonly object _hwLock = new object();
         private readonly Dictionary<int, int> _pendingBrightness = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _pendingContrast = new Dictionary<int, int>();
         private readonly AutoResetEvent _signal = new AutoResetEvent(false);
@@ -66,83 +67,86 @@ namespace LumiBar
                 return;
             }
 
-            ReleaseHardwareHandles();
-            _monitors.Clear();
-
-            List<IntPtr> hMonitors = new List<IntPtr>();
-            WinNative.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
-                delegate(IntPtr hMon, IntPtr hdc, ref WinNative.RECT r, IntPtr data)
-                {
-                    hMonitors.Add(hMon);
-                    return true;
-                }, IntPtr.Zero);
-
-            int wmiBrightness = ReadWmiLaptopBrightness();
-            Dictionary<string, string> wmiNames = ReadWmiMonitorNames();
-            bool wmiAssigned = false;
-
-            for (int i = 0; i < hMonitors.Count; i++)
+            lock (_sync)
             {
-                IntPtr hMon = hMonitors[i];
-                WinNative.MONITORINFOEXW mi = new WinNative.MONITORINFOEXW();
-                mi.cbSize = (uint)Marshal.SizeOf(typeof(WinNative.MONITORINFOEXW));
-                if (!WinNative.GetMonitorInfoW(hMon, ref mi)) continue;
-
-                string devName = (mi.szDevice ?? "").Trim();
-                int w = Math.Max(0, mi.rcMonitor.Right - mi.rcMonitor.Left);
-                int h = Math.Max(0, mi.rcMonitor.Bottom - mi.rcMonitor.Top);
-
-                DisplayMonitorItem item = new DisplayMonitorItem();
-                item.Index = _monitors.Count;
-                item.DeviceName = devName;
-                item.Resolution = w + "×" + h;
-                item.IsPrimary = (mi.dwFlags & WinNative.MONITORINFOF_PRIMARY) != 0;
-                item.FriendlyName = ResolveFriendlyName(devName, item.Index + 1, wmiNames);
-                item.Brightness = 100;
-                item.Contrast = 50;
-
-                // Read & preserve exact original gamma ramp before any software adjustment
-                WinNative.RAMP orig;
-                if (ReadGammaRamp(devName, out orig))
-                {
-                    item.HasOriginalGamma = true;
-                    item.OriginalGamma = orig;
-                }
-                else
-                {
-                    item.HasOriginalGamma = false;
-                    item.OriginalGamma = WinNative.RAMP.CreateIdentity();
-                }
-
-                // 1) Try hardware DDC/CI via dxva2.dll
-                bool ddcOk = TryInitDdcCi(hMon, item);
-
-                // 2) Fallback to WMI laptop panel brightness (internal display)
-                if (!ddcOk && wmiBrightness >= 0 && !wmiAssigned)
-                {
-                    item.Channel = DisplayChannel.LaptopWmi;
-                    item.Brightness = Math.Max(0, Math.Min(100, wmiBrightness));
-                    item.SupportsContrast = false;
-                    wmiAssigned = true;
-                }
-                // 3) Final fallback: smooth reversible Software Gamma dimming
-                else if (!ddcOk)
-                {
-                    item.Channel = DisplayChannel.SoftwareGamma;
-                    item.Brightness = 100;
-                    item.SupportsContrast = false;
-                }
-
-                _monitors.Add(item);
+                _pendingBrightness.Clear();
+                _pendingContrast.Clear();
             }
 
-            // Sort primary monitor first
-            _monitors.Sort(delegate(DisplayMonitorItem a, DisplayMonitorItem b)
+            lock (_hwLock)
             {
-                if (a.IsPrimary != b.IsPrimary) return a.IsPrimary ? -1 : 1;
-                return string.Compare(a.DeviceName, b.DeviceName, StringComparison.OrdinalIgnoreCase);
-            });
-            for (int i = 0; i < _monitors.Count; i++) _monitors[i].Index = i;
+                ReleaseHardwareHandles();
+                _monitors.Clear();
+
+                List<IntPtr> hMonitors = new List<IntPtr>();
+                WinNative.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+                    delegate(IntPtr hMon, IntPtr hdc, ref WinNative.RECT r, IntPtr data)
+                    {
+                        hMonitors.Add(hMon);
+                        return true;
+                    }, IntPtr.Zero);
+
+                int wmiBrightness = ReadWmiLaptopBrightness();
+                Dictionary<string, string> wmiNames = ReadWmiMonitorNames();
+                bool wmiAssigned = false;
+
+                for (int i = 0; i < hMonitors.Count; i++)
+                {
+                    IntPtr hMon = hMonitors[i];
+                    WinNative.MONITORINFOEXW mi = new WinNative.MONITORINFOEXW();
+                    mi.cbSize = (uint)Marshal.SizeOf(typeof(WinNative.MONITORINFOEXW));
+                    if (!WinNative.GetMonitorInfoW(hMon, ref mi)) continue;
+
+                    string devName = (mi.szDevice ?? "").Trim();
+                    int w = Math.Max(0, mi.rcMonitor.Right - mi.rcMonitor.Left);
+                    int h = Math.Max(0, mi.rcMonitor.Bottom - mi.rcMonitor.Top);
+
+                    DisplayMonitorItem item = new DisplayMonitorItem();
+                    item.Index = _monitors.Count;
+                    item.DeviceName = devName;
+                    item.Resolution = w + "×" + h;
+                    item.IsPrimary = (mi.dwFlags & WinNative.MONITORINFOF_PRIMARY) != 0;
+                    item.FriendlyName = ResolveFriendlyName(devName, item.Index + 1, wmiNames);
+                    item.Brightness = 100;
+                    item.Contrast = 50;
+
+                    WinNative.RAMP orig;
+                    if (ReadGammaRamp(devName, out orig))
+                    {
+                        item.HasOriginalGamma = true;
+                        item.OriginalGamma = orig;
+                    }
+                    else
+                    {
+                        item.HasOriginalGamma = false;
+                        item.OriginalGamma = WinNative.RAMP.CreateIdentity();
+                    }
+
+                    bool ddcOk = TryInitDdcCi(hMon, item);
+                    if (!ddcOk && wmiBrightness >= 0 && !wmiAssigned)
+                    {
+                        item.Channel = DisplayChannel.LaptopWmi;
+                        item.Brightness = Math.Max(0, Math.Min(100, wmiBrightness));
+                        item.SupportsContrast = false;
+                        wmiAssigned = true;
+                    }
+                    else if (!ddcOk)
+                    {
+                        item.Channel = DisplayChannel.SoftwareGamma;
+                        item.Brightness = 100;
+                        item.SupportsContrast = false;
+                    }
+
+                    _monitors.Add(item);
+                }
+
+                _monitors.Sort(delegate(DisplayMonitorItem a, DisplayMonitorItem b)
+                {
+                    if (a.IsPrimary != b.IsPrimary) return a.IsPrimary ? -1 : 1;
+                    return string.Compare(a.DeviceName, b.DeviceName, StringComparison.OrdinalIgnoreCase);
+                });
+                for (int i = 0; i < _monitors.Count; i++) _monitors[i].Index = i;
+            }
         }
 
         private static bool TryInitDdcCi(IntPtr hMon, DisplayMonitorItem item)
@@ -508,16 +512,19 @@ namespace LumiBar
                     foreach (KeyValuePair<int, int> kv in brBatch)
                     {
                         if (_stop) break;
-                        DisplayMonitorItem m = kv.Key >= 0 && kv.Key < _monitors.Count ? _monitors[kv.Key] : null;
-                        if (m == null) continue;
-                        if (m.Channel == DisplayChannel.DdcCi && m.PhysicalHandle != IntPtr.Zero)
+                        lock (_hwLock)
                         {
-                            uint raw = m.MinBr + (uint)Math.Round(((double)kv.Value / 100.0) * (m.MaxBr - m.MinBr));
-                            try { WinNative.SetMonitorBrightness(m.PhysicalHandle, raw); } catch { }
-                        }
-                        else if (m.Channel == DisplayChannel.LaptopWmi)
-                        {
-                            SetWmiLaptopBrightness(kv.Value);
+                            DisplayMonitorItem m = kv.Key >= 0 && kv.Key < _monitors.Count ? _monitors[kv.Key] : null;
+                            if (m == null) continue;
+                            if (m.Channel == DisplayChannel.DdcCi && m.PhysicalHandle != IntPtr.Zero)
+                            {
+                                uint raw = m.MinBr + (uint)Math.Round(((double)kv.Value / 100.0) * (m.MaxBr - m.MinBr));
+                                try { WinNative.SetMonitorBrightness(m.PhysicalHandle, raw); } catch { }
+                            }
+                            else if (m.Channel == DisplayChannel.LaptopWmi)
+                            {
+                                SetWmiLaptopBrightness(kv.Value);
+                            }
                         }
                     }
                 }
@@ -527,10 +534,13 @@ namespace LumiBar
                     foreach (KeyValuePair<int, int> kv in ctBatch)
                     {
                         if (_stop) break;
-                        DisplayMonitorItem m = kv.Key >= 0 && kv.Key < _monitors.Count ? _monitors[kv.Key] : null;
-                        if (m == null || !m.SupportsContrast || m.PhysicalHandle == IntPtr.Zero) continue;
-                        uint raw = m.MinCt + (uint)Math.Round(((double)kv.Value / 100.0) * (m.MaxCt - m.MinCt));
-                        try { WinNative.SetMonitorContrast(m.PhysicalHandle, raw); } catch { }
+                        lock (_hwLock)
+                        {
+                            DisplayMonitorItem m = kv.Key >= 0 && kv.Key < _monitors.Count ? _monitors[kv.Key] : null;
+                            if (m == null || !m.SupportsContrast || m.PhysicalHandle == IntPtr.Zero) continue;
+                            uint raw = m.MinCt + (uint)Math.Round(((double)kv.Value / 100.0) * (m.MaxCt - m.MinCt));
+                            try { WinNative.SetMonitorContrast(m.PhysicalHandle, raw); } catch { }
+                        }
                     }
                 }
             }
@@ -581,8 +591,11 @@ namespace LumiBar
             _stop = true;
             try { _signal.Set(); } catch { }
             if (_worker != null && _worker.IsAlive) { try { _worker.Join(800); } catch { } }
-            ResetAllGammas();
-            ReleaseHardwareHandles();
+            lock (_hwLock)
+            {
+                ResetAllGammas();
+                ReleaseHardwareHandles();
+            }
             _signal.Dispose();
         }
     }

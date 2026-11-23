@@ -280,6 +280,9 @@ namespace LumiBar
                     if (ni.OperationalStatus != OperationalStatus.Up) continue;
                     if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
                         ni.NetworkInterfaceType == NetworkInterfaceType.Tunnel) continue;
+                    string desc = (ni.Description ?? "").ToLowerInvariant();
+                    if (desc.Contains("loopback") || desc.Contains("virtualbox") || desc.Contains("vmware") ||
+                        desc.Contains("hyper-v") || desc.Contains("bluetooth")) continue;
                     try { curRx += ni.GetIPStatistics().BytesReceived; } catch { }
                 }
             }
