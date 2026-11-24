@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/系统-Windows%2010%20%2F%2011-0f172a?style=flat-square" alt="平台">
   <img src="https://img.shields.io/badge/依赖-零依赖单文件-34d399?style=flat-square" alt="零依赖">
   <a href="LICENSE"><img src="https://img.shields.io/badge/协议-MIT-a78bfa?style=flat-square" alt="MIT 协议"></a>
+  <a href="https://linux.do"><img src="https://img.shields.io/badge/开源社区-LINUX%20DO-1C1C1E?style=flat-square&logo=linux&logoColor=38BDF8" alt="LINUX DO 社区"></a>
 </p>
 
 ---
@@ -51,6 +52,10 @@
 
 欢迎访问 [**@rodvay**](https://github.com/rodvay) 查看同系列全部开源免费工具：
 - [**PCUptime**](https://github.com/rodvay/PCUptime) · [**SafeSweep**](https://github.com/rodvay/SafeSweep) · [**WinForge**](https://github.com/rodvay/WinForge) · [**CorePulse**](https://github.com/rodvay/CorePulse) · [**PortWatch**](https://github.com/rodvay/PortWatch) · [**LumiBar**](https://github.com/rodvay/LumiBar)
+
+## 社区与友情链接
+
+- 感谢 **[LINUX DO](https://linux.do)** 社区的开源分享氛围与各位佬友的支持与反馈！
 
 ## 开源协议
 

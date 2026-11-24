@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0f172a?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/dependencies-Zero-34d399?style=flat-square" alt="Zero Dependencies">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a78bfa?style=flat-square" alt="MIT License"></a>
+  <a href="https://linux.do"><img src="https://img.shields.io/badge/Community-LINUX%20DO-1C1C1E?style=flat-square&logo=linux&logoColor=38BDF8" alt="LINUX DO Community"></a>
 </p>
 
 ---
@@ -58,6 +59,10 @@
 
 Check out the full native open-source collection on [**@rodvay**](https://github.com/rodvay):
 - [**PCUptime**](https://github.com/rodvay/PCUptime) · [**SafeSweep**](https://github.com/rodvay/SafeSweep) · [**WinForge**](https://github.com/rodvay/WinForge) · [**CorePulse**](https://github.com/rodvay/CorePulse) · [**PortWatch**](https://github.com/rodvay/PortWatch) · [**LumiBar**](https://github.com/rodvay/LumiBar)
+
+## Community & Links
+
+- Friendly community link & discussion: **[LINUX DO](https://linux.do)** — Thank you to the LINUX DO open-source community for the feedback and support!
 
 ## License
 
